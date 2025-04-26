@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-// Import register screen later when created
+import 'signup_screen.dart'; // Import the sign-up screen
 // import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -127,8 +127,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: () {
                       // TODO: Navigate to Register Screen
-                      print('Navigate to Register Screen');
-                      // Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterScreen()));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SignUpScreen()),
+                      );  
                     },
                     child: const Text('Sign Up'),
                   ),

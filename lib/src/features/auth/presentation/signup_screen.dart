@@ -1,4 +1,6 @@
+// lib/src/features/auth/presentation/signup_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -19,38 +21,99 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscureConfirmPassword = true;
   bool _agreeToTerms = false;
   bool _isLoading = false;
+  String? _errorMessage; // To display Firebase errors
 
   Future<void> _createAccount() async {
+    print("--- _createAccount: Started ---"); // <-- DEBUG
     // Dismiss keyboard
     FocusScope.of(context).unfocus();
 
+    // Reset error message at the start of attempt
+    setState(() {
+       _errorMessage = null;
+    });
+
     if (!_agreeToTerms) {
-      // TODO: Show snackbar or dialog informing user they must agree to terms
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please agree to the Terms and Conditions')),
-      );
-      return;
+      print("--- _createAccount: Terms not agreed ---"); // <-- DEBUG
+      setState(() {
+         _errorMessage = 'Please agree to the Terms and Conditions';
+      });
+      return; // Stop execution
     }
+    print("--- _createAccount: Terms agreed ---"); // <-- DEBUG
+
 
     if (_formKey.currentState!.validate()) {
+       print("--- _createAccount: Form is valid ---"); // <-- DEBUG
       setState(() {
         _isLoading = true;
+        _errorMessage = null; // Clear previous errors again just in case
       });
+      print("--- _createAccount: Set loading to true ---"); // <-- DEBUG
 
-      // --- TODO: Implement Sign Up Logic ---
-      // 1. Get data: _nameController.text, _emailController.text, etc.
-      // 2. Call your authentication service (Firebase Auth or backend API)
-      print('Attempting sign up for: ${_emailController.text}');
-      // Simulate network call
-      await Future.delayed(const Duration(seconds: 2));
-      // --- End Sign Up Logic ---
+      try {
+        final email = _emailController.text.trim();
+        final password = _passwordController.text;
+        print('--- _createAccount: Attempting Firebase signup for: $email ---'); // <-- DEBUG
 
-      setState(() {
-        _isLoading = false;
-      });
-      // TODO: Navigate to home screen on success
-      // TODO: Show error message on failure (e.g., email already exists)
+        // --- Firebase Sign Up Logic ---
+        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        // If the above line completes without error, this line will execute
+        print('--- _createAccount: Firebase Signup Success! User UID ${credential.user?.uid} ---'); // <-- DEBUG
+
+        // Optionally update the user's profile (name, phone)
+        if (credential.user != null) {
+           print('--- _createAccount: Updating profile (placeholder) for ${credential.user!.uid}... ---'); // <-- DEBUG
+           // await credential.user!.updateDisplayName(_nameController.text.trim());
+        }
+        // --- End Firebase Sign Up Logic ---
+
+        // We DON'T set isLoading = false here on success. Auth listener handles navigation.
+        print("--- _createAccount: Success block finished ---"); // <-- DEBUG
+
+      } on FirebaseAuthException catch (e) {
+        print('--- _createAccount: Caught FirebaseAuthException: ${e.code} - ${e.message} ---'); // <-- DEBUG
+        if (e.code == 'weak-password') {
+          _errorMessage = 'The password provided is too weak.';
+        } else if (e.code == 'email-already-in-use') {
+          _errorMessage = 'An account already exists for that email.';
+        } else if (e.code == 'invalid-email') {
+           _errorMessage = 'The email address is badly formatted.';
+        } else {
+          _errorMessage = 'An error occurred during sign up: ${e.message}'; // Show more details
+        }
+         // Stop loading ONLY on error
+         if (mounted) { // Check if widget is still mounted
+           setState(() {
+             _isLoading = false;
+           });
+         }
+         print("--- _createAccount: Set loading to false due to FirebaseAuthException ---"); // <-- DEBUG
+      } catch (e, stackTrace) { // Catch generic errors too
+         print('--- _createAccount: Caught Generic Exception: $e ---'); // <-- DEBUG
+         print('--- Stack Trace: $stackTrace ---'); // <-- DEBUG Print stack trace
+         _errorMessage = 'An unexpected error occurred. Please try again.';
+          // Stop loading ONLY on error
+         if (mounted) { // Check if widget is still mounted
+            setState(() {
+              _isLoading = false;
+            });
+         }
+          print("--- _createAccount: Set loading to false due to Generic Exception ---"); // <-- DEBUG
+      }
+    } else {
+       print("--- _createAccount: Form is invalid ---"); // <-- DEBUG
+       // If form validation fails (passwords don't match etc.)
+       if (mounted) {
+         setState(() {
+            _errorMessage = 'Please fix the errors in the form.';
+         });
+       }
     }
+     print("--- _createAccount: Finished ---"); // <-- DEBUG
   }
 
   @override
@@ -65,27 +128,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+     print("--- SignUpScreen build method --- isLoading: $_isLoading"); // <-- DEBUG
     return Scaffold(
-      // Using AppBar for easy back arrow and title structure
       appBar: AppBar(
-        // Light gray header background as requested
         backgroundColor: Colors.grey[100],
-        elevation: 0, // Remove shadow
-        // Using title spacing and centerTitle for logo placeholder
+        elevation: 0,
         titleSpacing: 0,
         centerTitle: true,
         title: const Text(
-          'Kay\'s Laundry', // Logo Placeholder
+          'Kay\'s Laundry',
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
-        // Default back arrow is fine, or customize if needed
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black54),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(), // Disable during loading
         ),
       ),
-      body: SafeArea( // Ensure content avoids notches/system areas
-        child: SingleChildScrollView( // Allows scrolling if content overflows
+      body: SafeArea(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
@@ -93,6 +153,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                 // Error Message Display
+                if (_errorMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16.0),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
                 // Full Name Field
                 TextFormField(
                   controller: _nameController,
@@ -102,6 +173,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     prefixIcon: Icon(Icons.person_outline),
                   ),
                   keyboardType: TextInputType.name,
+                  textCapitalization: TextCapitalization.words,
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
                       return 'Please enter your full name';
@@ -129,21 +201,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 const SizedBox(height: 16.0),
 
-                // Phone Number Field
+                // Phone Number Field (Keep for now, even if not used for auth directly)
                 TextFormField(
                   controller: _phoneController,
                   decoration: const InputDecoration(
                     labelText: 'Phone Number',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.phone_outlined),
-                    // TODO: Add country code handling if needed
                   ),
                   keyboardType: TextInputType.phone,
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your phone number';
                     }
-                    // TODO: Add more specific phone number validation
+                    // Basic validation example
+                    if (value.length < 10) {
+                       return 'Please enter a valid phone number';
+                    }
                     return null;
                   },
                 ),
@@ -167,14 +241,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         });
                       },
                     ),
-                    hintText: '8+ characters', // Validation hint
+                    hintText: 'Min. 6 characters', // Firebase default minimum
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter a password';
                     }
-                    if (value.length < 8) {
-                      return 'Password must be at least 8 characters';
+                    // Firebase enforces minimum 6 chars by default
+                    if (value.length < 6) {
+                      return 'Password must be at least 6 characters';
                     }
                     return null;
                   },
@@ -214,7 +289,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                 // Terms and Conditions Checkbox
                 CheckboxListTile(
-                  title: RichText( // Use RichText for link styling
+                  title: RichText(
                      text: TextSpan(
                        text: 'I agree to the ',
                        style: DefaultTextStyle.of(context).style.copyWith(fontSize: 14),
@@ -225,8 +300,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                              color: Colors.blue,
                              decoration: TextDecoration.underline,
                            ),
-                           // TODO: Add recognizer to handle tap for Terms link
-                           // recognizer: TapGestureRecognizer()..onTap = () { print('Terms tapped'); },
+                           // TODO: Add recognizer for Terms link tap
                          ),
                        ],
                      ),
@@ -235,9 +309,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   onChanged: (bool? value) {
                     setState(() {
                       _agreeToTerms = value ?? false;
+                      if (_agreeToTerms && _errorMessage == 'Please agree to the Terms and Conditions') {
+                         _errorMessage = null; // Clear terms error if checked
+                      }
                     });
                   },
-                  controlAffinity: ListTileControlAffinity.leading, // Checkbox on left
+                  controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
                 const SizedBox(height: 24.0),
@@ -248,12 +325,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     : ElevatedButton(
                         onPressed: _createAccount,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue, // Primary button color
-                          foregroundColor: Colors.white, // Text color
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0), // Slightly rounded
+                            borderRadius: BorderRadius.circular(8.0),
                           ),
-                          minimumSize: const Size(double.infinity, 48), // Full width, 48px height
+                          minimumSize: const Size(double.infinity, 48),
                         ),
                         child: const Text('Create Account', style: TextStyle(fontSize: 16)),
                       ),
@@ -261,8 +338,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                 // Back to Login Link
                 TextButton(
-                  onPressed: () {
-                    // Navigate back to Login Screen
+                  onPressed: _isLoading ? null : () { // Disable during loading
                     Navigator.of(context).pop();
                   },
                   child: const Text('Already have an account? Login'),

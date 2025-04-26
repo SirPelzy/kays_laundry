@@ -1,6 +1,7 @@
+// lib/src/features/auth/presentation/login_screen.dart
 import 'package:flutter/material.dart';
-import 'signup_screen.dart'; // Import the sign-up screen
-// import 'register_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,27 +15,54 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  String? _errorMessage; // To display Firebase errors
 
   Future<void> _login() async {
+    // Dismiss keyboard
+    FocusScope.of(context).unfocus();
+
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isLoading = true;
+        _errorMessage = null; // Clear previous errors
       });
 
-      // --- TODO: Implement Login Logic ---
-      // 1. Get email/phone: _emailController.text
-      // 2. Get password: _passwordController.text
-      // 3. Call your authentication service (Firebase Auth or your backend API)
-      print('Attempting login with Email: ${_emailController.text}');
-      // Simulate network call
-      await Future.delayed(const Duration(seconds: 2));
-      // --- End Login Logic ---
+      try {
+        print('Attempting Firebase login with Email: ${_emailController.text}');
+        // --- Firebase Login Logic ---
+        final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _emailController.text.trim(), // Use trim()
+          password: _passwordController.text,
+        );
+        print('Firebase Login Success: User UID ${credential.user?.uid}');
+        // --- End Firebase Login Logic ---
 
-      setState(() {
-        _isLoading = false;
-      });
-      // TODO: Navigate to home screen on success
-      // TODO: Show error message on failure
+        // No need to set isLoading false here, auth state listener will handle navigation
+
+      } on FirebaseAuthException catch (e) {
+        print('Firebase Login Error: ${e.code}');
+        // Handle specific Firebase errors
+        if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
+          _errorMessage = 'Incorrect email or password.';
+        } else if (e.code == 'wrong-password') { // Might be covered by invalid-credential now
+          _errorMessage = 'Incorrect password.';
+        } else if (e.code == 'invalid-email') {
+          _errorMessage = 'The email address is badly formatted.';
+        } else {
+          _errorMessage = 'An error occurred. Please try again.';
+        }
+        setState(() {
+          _isLoading = false; // Stop loading on error
+        });
+      } catch (e) {
+        // Handle other potential errors
+        print('Login Error: $e');
+         _errorMessage = 'An unexpected error occurred.';
+         setState(() {
+          _isLoading = false; // Stop loading on error
+        });
+      }
+      // Note: We don't manually navigate here. The auth state listener in app.dart will do it.
     }
   }
 
@@ -65,18 +93,29 @@ class _LoginScreenState extends State<LoginScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24.0),
+
+              // Error Message Display
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(
-                  labelText: 'Email or Phone Number',
+                  labelText: 'Email', // Changed label to Email only
                   border: OutlineInputBorder(),
                 ),
-                keyboardType: TextInputType.emailAddress, // Adjust if needed for phone
+                keyboardType: TextInputType.emailAddress,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email or phone number';
+                  if (value == null || value.isEmpty || !value.contains('@')) {
+                    return 'Please enter a valid email address';
                   }
-                  // TODO: Add more specific email/phone validation if needed
                   return null;
                 },
               ),
@@ -92,9 +131,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your password';
                   }
-                  if (value.length < 6) { // Example validation
-                    return 'Password must be at least 6 characters';
-                  }
+                  // Firebase handles password complexity, but basic length check is okay
+                  // if (value.length < 6) {
+                  //   return 'Password must be at least 6 characters';
+                  // }
                   return null;
                 },
               ),
@@ -103,8 +143,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    // TODO: Implement Forgot Password navigation/logic
+                    // TODO: Implement Forgot Password navigation/logic (Firebase has password reset)
                     print('Forgot Password button pressed');
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       const SnackBar(content: Text('Forgot Password Not Implemented Yet')),
+                     );
                   },
                   child: const Text('Forgot Password?'),
                 ),
@@ -125,12 +168,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   const Text("Don't have an account?"),
                   TextButton(
-                    onPressed: () {
-                      // TODO: Navigate to Register Screen
+                    onPressed: _isLoading ? null : () { // Disable during loading
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const SignUpScreen()),
-                      );  
+                      );
                     },
                     child: const Text('Sign Up'),
                   ),

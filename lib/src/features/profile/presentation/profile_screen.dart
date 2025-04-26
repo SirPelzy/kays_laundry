@@ -1,6 +1,7 @@
-import '../../orders/presentation/order_history_screen.dart'; // Import order history screen
 // lib/src/features/profile/presentation/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import '../../orders/presentation/order_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -11,14 +12,11 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   // --- Placeholder User Data ---
-  // TODO: Replace with actual user data fetched from auth/backend
-  String _userName = 'Pelumi Ade';
-  String _userEmail = 'pelumi.ade@example.com';
-  String _userPhone = '+234 801 234 5678';
+  // TODO: Fetch user data from FirebaseAuth or your backend based on UID
+  String _userName = FirebaseAuth.instance.currentUser?.displayName ?? 'User'; // Get name from Firebase if available
+  String _userEmail = FirebaseAuth.instance.currentUser?.email ?? 'No email'; // Get email from Firebase
+  String _userPhone = '+234 801 234 5678'; // Phone still placeholder
   // --- End Placeholder Data ---
-
-  // TODO: Add state for editing mode if implementing inline editing
-  // bool _isEditing = false;
 
   // --- Helper to get initials ---
   String _getInitials(String name) {
@@ -34,16 +32,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return initials.toUpperCase();
   }
 
+  // --- Logout Function ---
+  Future<void> _logout() async {
+     // Optional: Show confirmation dialog
+     final bool? confirm = await showDialog<bool>(
+       context: context,
+       builder: (context) => AlertDialog(
+         title: const Text('Confirm Logout'),
+         content: const Text('Are you sure you want to log out?'),
+         actions: [
+           TextButton(
+             onPressed: () => Navigator.of(context).pop(false), // Return false on cancel
+             child: const Text('Cancel'),
+           ),
+           TextButton(
+             onPressed: () => Navigator.of(context).pop(true), // Return true on confirm
+             child: const Text('Logout'),
+             style: TextButton.styleFrom(foregroundColor: Colors.red),
+           ),
+         ],
+       ),
+     );
+
+     // Proceed only if user confirmed (confirm == true)
+     if (confirm == true) {
+        try {
+          print('Logging out user...');
+          await FirebaseAuth.instance.signOut();
+          print('User logged out successfully.');
+          // No need to navigate here, the auth state listener in app.dart will handle it
+        } catch (e) {
+           print('Error logging out: $e');
+           // Show error message if needed
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('Error logging out: ${e.toString()}')),
+           );
+        }
+     }
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    // This Scaffold is nested within the MainScaffold's body
+    // Update user details whenever the screen builds (in case they change)
+     _userName = FirebaseAuth.instance.currentUser?.displayName ?? 'User';
+     _userEmail = FirebaseAuth.instance.currentUser?.email ?? 'No email';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
-        backgroundColor: Colors.white, // Or Colors.grey[100] for light gray header
+        backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 1,
-        // No back button needed here as it's a main tab screen
         automaticallyImplyLeading: false,
       ),
       body: SingleChildScrollView(
@@ -75,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const Divider(height: 20),
                     _buildDetailItem(Icons.email_outlined, 'Email', _userEmail),
                     const Divider(height: 20),
-                    _buildDetailItem(Icons.phone_outlined, 'Phone', _userPhone),
+                    _buildDetailItem(Icons.phone_outlined, 'Phone', _userPhone), // Still placeholder
                     const SizedBox(height: 16),
                     Align(
                       alignment: Alignment.centerRight,
@@ -84,8 +124,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         label: const Text('Edit Profile'),
                         onPressed: () {
                           // TODO: Implement Edit Profile action
-                          // Could navigate to a separate Edit Profile screen
-                          // Or toggle an inline editing mode
                           print('Edit Profile button pressed');
                            ScaffoldMessenger.of(context).showSnackBar(
                              const SnackBar(content: Text('Edit Profile Not Implemented Yet')),
@@ -108,11 +146,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   context,
                   MaterialPageRoute(builder: (context) => const OrderHistoryScreen()),
                 );
-                
-                print('Navigate to Order History');
-                 ScaffoldMessenger.of(context).showSnackBar(
-                   const SnackBar(content: Text('Order History Not Implemented Yet')),
-                 );
               },
             ),
             _buildOptionItem(
@@ -130,18 +163,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildOptionItem(
               icon: Icons.logout_outlined,
               title: 'Logout',
-              iconColor: Colors.red.shade600, // Make logout visually distinct
+              iconColor: Colors.red.shade600,
               textColor: Colors.red.shade700,
-              onTap: () {
-                // TODO: Implement Logout logic
-                // 1. Show confirmation dialog
-                // 2. Clear user session/token
-                // 3. Navigate back to Login Screen
-                print('Logout button pressed');
-                 ScaffoldMessenger.of(context).showSnackBar(
-                   const SnackBar(content: Text('Logout Not Implemented Yet')),
-                 );
-              },
+              onTap: _logout, // Call the logout function
             ),
           ],
         ),
@@ -181,7 +205,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
-    Color? iconColor, // Optional color override
+    Color? iconColor,
     Color? textColor,
   }) {
     return ListTile(
@@ -192,8 +216,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0), // Adjust padding
-      // Ensure touch target size is sufficient via ListTile's default padding
+      contentPadding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
     );
   }
 }

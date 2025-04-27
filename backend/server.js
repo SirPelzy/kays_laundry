@@ -2,56 +2,78 @@
 
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors'); // Keep cors for potential future needs, but less critical now
-const path = require('path'); // Import path module
+const cors = require('cors');
+const path = require('path');
+const { Pool } = require('pg'); // Import the Pool class from pg
+
+// --- Database Connection Setup ---
+// Create a connection pool using the DATABASE_URL from .env
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Add SSL configuration if required by Render (often needed for external connections,
+  // but internal connections might not need it. Check Render docs if connection fails)
+  // ssl: {
+  //   rejectUnauthorized: false // Use this carefully, check Render's recommended settings
+  // }
+});
+
+// Test the database connection
+pool.connect((err, client, release) => {
+  if (err) {
+    return console.error('Error acquiring client for DB connection test:', err.stack);
+  }
+  client.query('SELECT NOW()', (err, result) => {
+    release(); // Release the client back to the pool
+    if (err) {
+      return console.error('Error executing DB connection test query:', err.stack);
+    }
+    console.log('Successfully connected to PostgreSQL database at:', result.rows[0].now);
+  });
+});
+// --- End Database Connection Setup ---
+
 
 const app = express();
 
 // --- Middleware ---
-
-// CORS might still be useful if you ever have other origins needing access
-// For same-origin serving, it's less critical but doesn't hurt.
-app.use(cors());
-
-// Standard middleware
+app.use(cors()); // Keep CORS for flexibility
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // --- API Routes (Prefix with /api) ---
-// It's crucial that API routes are defined *before* the static file serving
 
-// Placeholder Data
-const placeholderServices = [
-  { id: '1', name: 'Wash & Fold', description: 'Clothes washed, dried, and neatly folded.', pricePerUnit: 500, unit: 'kg' },
-  { id: '2', name: 'Wash & Iron', description: 'Washed, dried, and professionally ironed.', pricePerUnit: 800, unit: 'kg' },
-  { id: '3', name: 'Dry Cleaning', description: 'Special care for delicate garments.', pricePerUnit: 1500, unit: 'item' },
-  { id: '4', name: 'Just Ironing', description: 'Get your clothes professionally pressed.', pricePerUnit: 300, unit: 'item' },
-];
-
-// GET endpoint to fetch all services
-app.get('/api/services', (req, res) => {
+// GET endpoint to fetch all services FROM DATABASE
+app.get('/api/services', async (req, res) => { // Make the handler async
   console.log(`Executing route handler for GET /api/services`);
-  res.status(200).json(placeholderServices);
+  try {
+    // Query the database
+    const result = await pool.query('SELECT id, name, description, price_per_unit, unit FROM services ORDER BY id'); // Added ORDER BY
+
+    // Ensure price_per_unit is treated as a number (float/double)
+    const services = result.rows.map(service => ({
+        ...service,
+        pricePerUnit: parseFloat(service.price_per_unit) // Convert string from DB if needed, or ensure DB type is numeric
+    }));
+
+    console.log(`Successfully fetched ${services.length} services from DB.`);
+    res.status(200).json(services); // Send database results
+  } catch (err) {
+    console.error('Error fetching services from DB:', err.stack);
+    res.status(500).json({ error: 'Failed to fetch services' }); // Send JSON error
+  }
 });
 
-// --- TODO: Add more API routes here, always starting with /api ---
-// Example: app.post('/api/orders', ...)
-
-
 // --- Serve Static Files from Flutter Build ---
-// Construct the path to the Flutter web build directory
-// This assumes the backend folder is at the same level as the Flutter project root
 const flutterBuildPath = path.resolve(__dirname, '..', 'build', 'web');
 console.log(`Serving static files from: ${flutterBuildPath}`);
-
-// Serve static files (HTML, JS, CSS, assets)
 app.use(express.static(flutterBuildPath));
 
-// --- Fallback for Single Page Applications (SPAs) ---
-// For any request that doesn't match an API route or a static file,
-// serve the main index.html file. This allows Flutter's routing to take over.
+// --- Fallback for SPAs ---
 app.get('*', (req, res) => {
-  console.log(`Fallback route hit for ${req.originalUrl}, serving index.html`);
+  // Avoid logging every static file request if desired
+  if (!req.originalUrl.startsWith('/api') && !req.originalUrl.includes('.')) {
+     console.log(`Fallback route hit for ${req.originalUrl}, serving index.html`);
+  }
   res.sendFile(path.resolve(flutterBuildPath, 'index.html'));
 });
 
@@ -59,11 +81,16 @@ app.get('*', (req, res) => {
 // --- Error Handling Middleware ---
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).send('Something broke!');
+  // Ensure response is JSON if API call failed mid-request
+  if (!res.headersSent) {
+     res.status(500).json({ error: 'Something broke!' });
+  } else {
+     next(err); // Default error handler if headers already sent
+  }
 });
 
 // --- Start Server ---
-const PORT = process.env.PORT || 3000; // Render provides PORT environment variable
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);

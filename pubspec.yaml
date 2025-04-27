@@ -38,6 +38,7 @@ dependencies:
   intl: ^0.18.1
   firebase_core: ^2.32.0 # Core Firebase functionality
   firebase_auth: ^4.20.0 # Firebase Authentication
+  http: ^1.2.1
 
 dev_dependencies:
   flutter_test:

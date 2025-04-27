@@ -1,5 +1,4 @@
 // lib/src/features/services/domain/laundry_service.dart
-import 'package:flutter/material.dart'; // Import for IconData
 
 class LaundryService {
   final String id;
@@ -7,7 +6,7 @@ class LaundryService {
   final String description;
   final double pricePerUnit;
   final String unit; // e.g., "kg", "item"
-  final IconData icon; // To display an icon on the card
+  // Removed IconData icon field
 
   const LaundryService({
     required this.id,
@@ -15,6 +14,18 @@ class LaundryService {
     required this.description,
     required this.pricePerUnit,
     required this.unit,
-    required this.icon,
+    // Removed icon from constructor
   });
+
+  // Factory constructor to create a LaundryService from JSON
+  factory LaundryService.fromJson(Map<String, dynamic> json) {
+    return LaundryService(
+      id: json['id'] as String? ?? '', // Handle potential null ID
+      name: json['name'] as String? ?? 'Unnamed Service',
+      description: json['description'] as String? ?? '',
+      // Ensure pricePerUnit is parsed correctly (it might be int or double in JSON)
+      pricePerUnit: (json['pricePerUnit'] as num?)?.toDouble() ?? 0.0,
+      unit: json['unit'] as String? ?? 'unit',
+    );
+  }
 }

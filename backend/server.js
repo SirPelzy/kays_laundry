@@ -10,24 +10,29 @@ const { Pool } = require('pg'); // Import the Pool class from pg
 // Create a connection pool using the DATABASE_URL from .env
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Add SSL configuration if required by Render (often needed for external connections,
-  // but internal connections might not need it. Check Render docs if connection fails)
-  // ssl: {
-  //   rejectUnauthorized: false // Use this carefully, check Render's recommended settings
-  // }
+  // ** Enable SSL Configuration **
+  // Render typically requires SSL for database connections.
+  // `rejectUnauthorized: false` bypasses certificate verification.
+  // Use this setting carefully; it's common for managed DBs on internal networks
+  // but less secure if the network path isn't fully trusted.
+  // Check Render's documentation for their recommended SSL settings if this causes issues.
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 // Test the database connection
 pool.connect((err, client, release) => {
   if (err) {
-    return console.error('Error acquiring client for DB connection test:', err.stack);
+    // Log the specific error during connection attempt
+    return console.error('Error acquiring client for DB connection test:', err.message, err.stack);
   }
   client.query('SELECT NOW()', (err, result) => {
     release(); // Release the client back to the pool
     if (err) {
       return console.error('Error executing DB connection test query:', err.stack);
     }
-    console.log('Successfully connected to PostgreSQL database at:', result.rows[0].now);
+    console.log('Successfully connected to PostgreSQL database (via SSL) at:', result.rows[0].now);
   });
 });
 // --- End Database Connection Setup ---
@@ -36,7 +41,25 @@ pool.connect((err, client, release) => {
 const app = express();
 
 // --- Middleware ---
-app.use(cors()); // Keep CORS for flexibility
+// Configure CORS Explicitly (Simplified)
+const frontendOrigin = process.env.FRONTEND_ORIGIN_URL || '*'; // Use env var or allow all if not set
+console.log(`Configuring CORS to allow origin: ${frontendOrigin}`);
+const corsOptions = {
+  origin: frontendOrigin === '*' ? '*' : [frontendOrigin], // Allow specific or all
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions));
+
+// Optional: Log requests after CORS middleware
+app.use((req, res, next) => {
+  console.log(`Request received: ${req.method} ${req.originalUrl} from origin ${req.headers.origin}`);
+  next();
+});
+
+// Other standard middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -45,21 +68,28 @@ app.use(express.urlencoded({ extended: true }));
 // GET endpoint to fetch all services FROM DATABASE
 app.get('/api/services', async (req, res) => { // Make the handler async
   console.log(`Executing route handler for GET /api/services`);
+  let client; // Define client outside try block for finally block access
   try {
-    // Query the database
-    const result = await pool.query('SELECT id, name, description, price_per_unit, unit FROM services ORDER BY id'); // Added ORDER BY
+    client = await pool.connect(); // Get a client from the pool
+    const result = await client.query('SELECT id, name, description, price_per_unit, unit FROM services ORDER BY id');
 
-    // Ensure price_per_unit is treated as a number (float/double)
     const services = result.rows.map(service => ({
         ...service,
-        pricePerUnit: parseFloat(service.price_per_unit) // Convert string from DB if needed, or ensure DB type is numeric
+        // Convert price_per_unit from string/numeric to float if necessary
+        // pg typically returns numeric types correctly, but explicit parsing is safe
+        pricePerUnit: parseFloat(service.price_per_unit)
     }));
 
     console.log(`Successfully fetched ${services.length} services from DB.`);
-    res.status(200).json(services); // Send database results
+    res.status(200).json(services);
   } catch (err) {
     console.error('Error fetching services from DB:', err.stack);
-    res.status(500).json({ error: 'Failed to fetch services' }); // Send JSON error
+    res.status(500).json({ error: 'Failed to fetch services' });
+  } finally {
+     if (client) {
+        client.release(); // Ensure client is released back to the pool
+        console.log("DB client released for /api/services");
+     }
   }
 });
 
@@ -70,22 +100,26 @@ app.use(express.static(flutterBuildPath));
 
 // --- Fallback for SPAs ---
 app.get('*', (req, res) => {
-  // Avoid logging every static file request if desired
   if (!req.originalUrl.startsWith('/api') && !req.originalUrl.includes('.')) {
      console.log(`Fallback route hit for ${req.originalUrl}, serving index.html`);
   }
-  res.sendFile(path.resolve(flutterBuildPath, 'index.html'));
+  res.sendFile(path.resolve(flutterBuildPath, 'index.html'), (err) => {
+     if (err) {
+        // Handle error if index.html can't be sent (e.g., file not found after build issues)
+        console.error("Error sending index.html:", err);
+        res.status(err.status || 500).end();
+     }
+  });
 });
 
 
 // --- Error Handling Middleware ---
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  // Ensure response is JSON if API call failed mid-request
+  console.error("Global Error Handler:", err.stack);
   if (!res.headersSent) {
      res.status(500).json({ error: 'Something broke!' });
   } else {
-     next(err); // Default error handler if headers already sent
+     next(err);
   }
 });
 
